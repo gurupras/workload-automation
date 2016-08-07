@@ -81,7 +81,7 @@ class Antutu(AndroidUiAutoBenchmark):
             if not context.device.is_installed(info.package):
                 self.device.install_apk(antutu_3d, timeout=120)
             # Antutu doesnt seem to list this as one of its permissions, but it asks for it.
-            self.device.execute("pm grant com.antutu.ABenchMark android.permission.ACCESS_FINE_LOCATION")
+            #self.device.execute("pm grant com.antutu.ABenchMark android.permission.ACCESS_FINE_LOCATION")
         super(Antutu, self).setup(context)
 
     def update_result(self, context):

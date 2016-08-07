@@ -21,7 +21,7 @@ from wlauto import ApkWorkload, Parameter
 
 class TheChase(ApkWorkload):
 
-    name = 'thechase'
+    name = 'thechase-custom'
     description = """
     The Chase demo showcasing the capabilities of Unity game engine.
 

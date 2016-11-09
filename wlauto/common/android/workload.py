@@ -92,6 +92,7 @@ class UiAutomatorWorkload(Workload):
         for k, v in self.uiauto_params.iteritems():
             params += ' -e {} "{}"'.format(k, v)
         self.command = 'uiautomator runtest {}{} -c {}'.format(self.device_uiauto_file, params, method_string)
+        print 'COMMAND: {}'.format(self.command)
         self.device.push_file(self.uiauto_file, self.device_uiauto_file)
         self.device.killall('uiautomator')
 

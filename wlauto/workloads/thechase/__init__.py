@@ -30,7 +30,7 @@ class TheChase(ApkWorkload):
 
     """
 
-    package = 'com.unity3d.TheChase'
+    package = 'com.unity3d.TheChaseAndroid'
     activity = 'com.unity3d.player.UnityPlayerNativeActivity'
     install_timeout = 200
     view = 'SurfaceView'

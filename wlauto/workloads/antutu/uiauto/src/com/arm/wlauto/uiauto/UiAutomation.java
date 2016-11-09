@@ -11,11 +11,29 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
+ */
 
 
 package com.arm.wlauto.uiauto.antutu;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+
+import java.io.IOException;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.concurrent.TimeUnit;
@@ -32,82 +50,66 @@ import com.android.uiautomator.core.UiSelector;
 import com.android.uiautomator.core.UiCollection;
 import com.android.uiautomator.testrunner.UiAutomatorTestCase;
 
+import org.json.JSONObject;
+
 import com.arm.wlauto.uiauto.BaseUiAutomation;
 
 public class UiAutomation extends BaseUiAutomation {
+    public static String TAG = "WorkloadAutomation->antutu".toString();
 
-    public static String TAG = "antutu";
-    public static String TestButton5 = "com.antutu.ABenchMark:id/start_test_region";
-    public static String TestButton6 = "com.antutu.ABenchMark:id/start_test_text";
-    private static int initialTimeoutSeconds = 20;
+    public static final String PACKAGE_NAME = "com.antutu.ABenchMark";
+    public static String TestButton6 = buildId("start_test_text");
+    private static final int INITIAL_TIMEOUT_SEC = 20;
 
-    public void runUiAutomation() throws Exception{
+    public void runUiAutomation() throws Exception {
         Bundle parameters = getParams();
 
-        String version = parameters.getString("version");
-        boolean enableSdTests = Boolean.parseBoolean(parameters.getString("enable_sd_tests"));
+        final int iterations = Integer.parseInt(parameters.getString("iterations", "1"));
+        final int ambientTemp = Integer.parseInt(parameters.getString("ambient-temp", "25"));
+        final boolean internal = Boolean.parseBoolean(parameters.getString("internal", "true"));
+        final String test = parameters.getString("test", null);
 
-        int times = Integer.parseInt(parameters.getString("times"));
-        if (times < 1) {
-                times = 1;
-        }
 
-        if (version.equals("3.3.2")) { // version earlier than 4.0.3
-            dismissReleaseNotesDialogIfNecessary();
-            if(!enableSdTests){
-               disableSdCardTests();
-            }
-            hitStart();
-            waitForAndViewResults();
-        }
-        else {
-            int iteration = 0;
-            dismissNewVersionNotificationIfNecessary();
-            while (true) {
-                    if(version.equals("6.0.1"))
-                        hitTestButtonVersion5(TestButton6);
-                    else if (version.equals("5.3.0")) {
-                        hitTestButton();
-                        hitTestButtonVersion5(TestButton5);
-                    }
-                    else if (version.equals("4.0.3")) {
-                        hitTestButton();
-                        hitTestButton();
-                    }
-                    else
-                        hitTestButton();
-
-                    if(version.equals("6.0.1"))
-                    {
-                        waitForVersion6Results();
-                        extractResults6();
-                    }
-                    else
-                    {
-                        waitForVersion4Results();
-                        viewDetails();
-                        extractResults();
-                    }
-
-                    iteration++;
-                    if (iteration >= times) {
-                        break;
-                    }
-
-                    returnToTestScreen(version);
-                    dismissRateDialogIfNecessary();
-                    testAgain();
+        if(test != null) {
+            runTest(test, parameters);
+        } else {
+            if(internal) {
+                runInternal(parameters);
+            } else {
+				runWorkload();
             }
         }
+        getAutomationSupport().sendStatus(Activity.RESULT_OK, new Bundle());
+    }
 
-        Bundle status = new Bundle();
-        getAutomationSupport().sendStatus(Activity.RESULT_OK, status);
+	public void runWorkload() throws Exception {
+		dismissNewVersionNotificationIfNecessary();
+
+		hitTestButton();
+		waitForResults();
+		logResults();
+	}
+
+
+    public void runTest(String test, Bundle parameters) throws Exception {
+        if("waitForTemp".equals(test)) {
+            final int ambientTemp = Integer.parseInt(parameters.getString("ambient-temp", "25"));
+            Log.d(TAG, "TEST: Waiting for ambient temp: " + ambientTemp);
+            waitForAmbientTemperature(ambientTemp, 30);
+            Log.d(TAG, "TEST: Done");
+        } else if("exec".equals(test)) {
+            final String cmd = parameters.getString("cmd", null);
+            
+            if(cmd != null) {
+                Runtime.getRuntime().exec("uiautomator-controller " + cmd);
+            }
+        }
     }
 
     public boolean dismissNewVersionNotificationIfNecessary() throws Exception {
         UiSelector selector = new UiSelector();
         UiObject closeButton = new UiObject(selector.text("Cancel"));
-        if (closeButton.waitForExists(TimeUnit.SECONDS.toMillis(initialTimeoutSeconds))) {
+        if (closeButton.waitForExists(TimeUnit.SECONDS.toMillis(INITIAL_TIMEOUT_SEC))) {
             closeButton.click();
             sleep(1); // diaglog dismissal
             return true;
@@ -116,265 +118,225 @@ public class UiAutomation extends BaseUiAutomation {
         }
     }
 
-    public boolean dismissReleaseNotesDialogIfNecessary() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject closeButton = new UiObject(selector.text("Close"));
-        if (closeButton.waitForExists(TimeUnit.SECONDS.toMillis(initialTimeoutSeconds))) {
-            closeButton.click();
-            sleep(1); // diaglog dismissal
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    public boolean dismissRateDialogIfNecessary() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject closeButton = new UiObject(selector.text("NOT NOW"));
-        boolean dismissed = false;
-        // Sometimes, dismissing the dialog the first time does not work properly --
-        // it starts to disappear but is then immediately re-created; so may need to
-        // dismiss it as long as keeps popping up.
-        while (closeButton.waitForExists(2)) {
-            closeButton.click();
-            sleep(1); // diaglog dismissal
-            dismissed = true;
-        }
-        return dismissed;
-    }
 
     public void hitTestButton() throws Exception {
         UiSelector selector = new UiSelector();
-        UiObject test = new UiObject(selector.text("Test")
-                                             .className("android.widget.Button"));
-        test.waitForExists(initialTimeoutSeconds);
+        UiObject test = new UiObject(selector.resourceId(TestButton6)
+                .className("android.widget.TextView"));
+        test.waitForExists(INITIAL_TIMEOUT_SEC);
+        Log.d(TAG, "__MAGIC__ Starting Workload");
         test.click();
         sleep(1); // possible tab transtion
     }
 
-   /* In version 5 of antutu, the test has been changed from a button widget to a textview */
-
-   public void hitTestButtonVersion5(String id) throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject test = new UiObject(selector.resourceId(id)
-                                             .className("android.widget.TextView"));
-        test.waitForExists(initialTimeoutSeconds);
-        test.click();
-        sleep(1); // possible tab transtion
-    }
-
-
-    public void hitTest() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject test = new UiObject(selector.text("Test"));
-        test.click();
-        sleep(1); // possible tab transtion
-    }
-
-    public void disableSdCardTests() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject custom = new UiObject(selector.textContains("Custom"));
-        custom.click();
-        sleep(1); // tab transition
-
-        UiObject sdCardButton = new UiObject(selector.text("SD card IO"));
-        sdCardButton.click();
-    }
-
-    public void hitStart() throws Exception {
-        UiSelector selector = new UiSelector();
-        Log.v(TAG, "Start the test");
-        UiObject startButton = new UiObject(selector.text("Start Test")
-                                                    .className("android.widget.Button"));
-        startButton.click();
-    }
-
-    public void waitForVersion4Results() throws Exception {
-        // The observed behaviour seems to vary between devices. On some platforms,
-        // the benchmark terminates in the barchart screen; on others, it terminates in
-        // details screen. So we have to wait for either and then act appropriatesl (on the barchart
-        // screen a back button press is required to get to the details screen.
-        UiSelector selector = new UiSelector();
-        UiObject barChart = new UiObject(new UiSelector().className("android.widget.TextView")
-                                                         .text("Bar Chart"));
-        UiObject detailsButton = new UiObject(new UiSelector().className("android.widget.Button")
-                                                              .text("Details"));
-        for (int i = 0; i < 60; i++) {
-            if (detailsButton.exists() || barChart.exists()) {
-                break;
-            }
-            sleep(5);
-        }
-
-        if (barChart.exists()) {
-            getUiDevice().pressBack();
+    public void waitForResults() throws Exception {
+        UiObject retestButton = new UiObject(new UiSelector().resourceId(buildId("btn_retest")));
+        if (retestButton.waitForExists(TimeUnit.SECONDS.toMillis(500))) {
+            Log.d(TAG, "__MAGIC__ Finished Workload");
+            return;
+        } else {
+            throw new IllegalStateException("Failed to wait for btn_retest");
         }
     }
 
-    public void waitForVersion6Results() throws Exception {
-        UiObject qrText = new UiObject(new UiSelector().className("android.widget.TextView")
-                                                       .text("QRCode of result"));
-        for (int i = 0; i < 120; i++) {
-            if (qrText.exists()) {
-                break;
-            }
-            sleep(5);
-        }
-    }
-
-    public void viewDetails() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject detailsButton = new UiObject(new UiSelector().className("android.widget.Button")
-                                                              .text("Details"));
-        detailsButton.clickAndWaitForNewWindow();
-    }
-
-    public void extractResults6() throws Exception {
+    public void logResults() throws Exception {
+        long resultOverall = -1, result3d = -1, resultUx = -1, resultCpu = -1, resultRam = -1;
         //Overal result
-        UiObject result = new UiObject(new UiSelector().resourceId("com.antutu.ABenchMark:id/tv_score_name"));
+        UiObject result = new UiObject(new UiSelector().resourceId(buildId("tv_score_name")));
         if (result.exists()) {
+            resultOverall = Long.parseLong(result.getText());
             Log.v(TAG, String.format("ANTUTU RESULT: Overall Score: %s", result.getText()));
         }
 
         // individual scores
-        extractSectionResults6("3d");
-        extractSectionResults6("ux");
-        extractSectionResults6("cpu");
-        extractSectionResults6("ram");
+        result3d = extractSectionResults("3d");
+        resultUx = extractSectionResults("ux");
+        resultCpu = extractSectionResults("cpu");
+        resultRam = extractSectionResults("ram");
+
+        JSONObject json = new JSONObject();
+        try {
+            json.put("overall", resultOverall);
+            json.put("3d", result3d);
+            json.put("ux", resultUx);
+            json.put("cpu", resultCpu);
+            json.put("ram", resultRam);
+            Log.i(TAG, json.toString());
+        } catch(Exception e) {
+            Log.e(TAG, "Failed to record JSON", e);
+        }
     }
 
-    public void extractSectionResults6(String section) throws Exception {
+    public long extractSectionResults(String section) throws Exception {
         UiSelector selector = new UiSelector();
-        UiObject resultLayout = new UiObject(selector.resourceId("com.antutu.ABenchMark:id/hcf_" + section));
-        UiObject result = resultLayout.getChild(selector.resourceId("com.antutu.ABenchMark:id/tv_score_value"));
+        UiObject resultLayout = new UiObject(selector.resourceId(buildId("hcf_" + section)));
+        UiObject result = resultLayout.getChild(selector.resourceId(buildId("tv_score_value")));
 
+        long res = -1;
         if (result.exists()) {
+            res = Long.parseLong(result.getText());
             Log.v(TAG, String.format("ANTUTU RESULT: %s Score: %s", section, result.getText()));
         }
+        return res;
     }
 
-    public void extractResults() throws Exception {
-        extractOverallResult();
-        extractSectionResults();
+    public static String buildId(String id) {
+        return String.format("%s:id/%s", PACKAGE_NAME, id);
     }
 
-    public void extractOverallResult() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiSelector resultTextSelector = selector.className("android.widget.TextView").index(0);
-        UiSelector relativeLayoutSelector = selector.className("android.widget.RelativeLayout").index(1);
-        UiObject result = new UiObject(selector.className("android.widget.LinearLayout")
-                                               .childSelector(relativeLayoutSelector)
-                                               .childSelector(resultTextSelector));
-        if (result.exists()) {
-            Log.v(TAG, String.format("ANTUTU RESULT: Overall Score: %s", result.getText()));
+	public static String readFile(String path) throws IOException {
+        BufferedReader reader = null;
+        File f = new File(path);
+        reader = new BufferedReader(new FileReader(f));
+        String string = reader.readLine().trim();
+        reader.close();
+		return string;
+	}
+
+    public static int getTemp() throws IOException {
+		String tempStr = readFile("/sys/class/thermal/thermal_zone5/temp");
+        int temp = Integer.parseInt(tempStr);
+        return temp;
+    }
+
+
+    public static void waitForAmbientTemperature(int ambientTemp) throws InterruptedException {
+        waitForAmbientTemperature(ambientTemp, 5);
+    }
+
+    public static void waitForAmbientTemperature(int ambientTemp, int durationSec) throws InterruptedException {
+        int stableCount = 0;
+        long lastTime = 0;
+
+        if (ambientTemp == 0) {
+            ambientTemp = 35;
+            Log.w(TAG, "Ambient temperature was 0..using: " + ambientTemp);
         }
-    }
 
-    public void extractSectionResults() throws Exception {
-        UiSelector selector = new UiSelector();
-        Set<String> processedMetrics = new HashSet<String>();
-
-        actuallyExtractSectionResults(processedMetrics);
-        UiScrollable resultsList = new UiScrollable(selector.className("android.widget.ScrollView"));
-        // Note: there is an assumption here that the entire results list fits on at most
-        //       two screens on the device. Given then number of entries in the current
-        //       antutu verion and the devices we're dealing with, this is a reasonable
-        //       assumption. But if this changes, this will need to be adapted to scroll more
-        //       slowly.
-        resultsList.scrollToEnd(10);
-        actuallyExtractSectionResults(processedMetrics);
-    }
-
-    public void actuallyExtractSectionResults(Set<String> processedMetrics) throws Exception {
-        UiSelector selector = new UiSelector();
-
-        for (int i = 1; i < 8; i += 2) {
-            UiObject table = new UiObject(selector.className("android.widget.TableLayout").index(i));
-            for (int j = 0; j < 3; j += 2) {
-                UiObject row = table.getChild(selector.className("android.widget.TableRow").index(j));
-                UiObject metric =  row.getChild(selector.className("android.widget.TextView").index(0));
-                UiObject value =  row.getChild(selector.className("android.widget.TextView").index(1));
-
-                if (metric.exists() && value.exists()) {
-                    String metricText = metric.getText();
-                    if (!processedMetrics.contains(metricText)) {
-                        Log.v(TAG, String.format("ANTUTU RESULT: %s %s", metric.getText(), value.getText()));
-                        processedMetrics.add(metricText);
-                    }
+        try {
+            while (true) {
+                int temp = getTemp();
+                if (stableCount == durationSec) {
+                    break;
                 }
+
+                long timeNow = System.currentTimeMillis();
+                if (timeNow - lastTime > 30000) {
+                    lastTime = timeNow;
+                }
+
+                if (temp - ambientTemp <= 0) {
+                    stableCount++;
+                } else {
+                    stableCount = 0;
+                }
+                Thread.sleep(1000);
             }
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to read temperature", e);
+            stableCount = 0;
         }
     }
 
-    public void returnToTestScreen(String version) throws Exception {
-        getUiDevice().pressBack();
-        if (version.equals("5.3.0"))
-        {
-            UiSelector selector = new UiSelector();
-            UiObject detailsButton = new UiObject(new UiSelector().className("android.widget.Button")
-                                                                  .text("Details"));
-            sleep(1);
-            getUiDevice().pressBack();
+    public static void setCoreFrequency(int frequency, int core) throws Exception {
+        run("write userspace /sys/devices/system/cpu/cpu" + core + "/cpufreq/scaling_governor");
+        run("write " + frequency + " /sys/devices/system/cpu/cpu" + core + "/cpufreq/scaling_setspeed");
+    }
+
+    public static void setAllCoreFrequency(int frequency) throws Exception {
+        for(int core = 0; core < 4; core++) {
+            run("write userspace /sys/devices/system/cpu/cpu" + core + "/cpufreq/scaling_governor");
+            run("write " + frequency + " /sys/devices/system/cpu/cpu" + core + "/cpufreq/scaling_setspeed");
         }
     }
 
-    public void testAgain() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject retestButton = new UiObject(selector.text("Test Again")
-                                                     .className("android.widget.Button"));
-        if (!retestButton.waitForExists(TimeUnit.SECONDS.toMillis(2))) {
-            getUiDevice().pressBack();
-            retestButton.waitForExists(TimeUnit.SECONDS.toMillis(2));
-        }
-        retestButton.clickAndWaitForNewWindow();
+    public static void setCoreGovernor(String governor, int cpu) throws Exception {
+        run(String.format("write %s /sys/devices/system/cpu/cpu%d/cpufreq/scaling_governor", governor, cpu));
     }
 
-    public void waitForAndViewResults() throws Exception {
-        UiSelector selector = new UiSelector();
-        UiObject submitTextView = new UiObject(selector.text("Submit Scores")
-                                                       .className("android.widget.TextView"));
-        UiObject detailTextView = new UiObject(selector.text("Detailed Scores")
-                                                       .className("android.widget.TextView"));
-        UiObject commentTextView = new UiObject(selector.text("User comment")
-                                                        .className("android.widget.TextView"));
-        boolean foundResults = false;
-        for (int i = 0; i < 60; i++) {
-            if (detailTextView.exists() || submitTextView.exists() || commentTextView.exists()) {
-                foundResults = true;
-                break;
-            }
-            sleep(5);
+    public static void setAllCoreGovernor(String governor) throws Exception {
+        for(int cpu = 0; cpu < 4; cpu++) {
+            setCoreGovernor(governor, cpu);
         }
+    }
 
-        if (!foundResults) {
-                throw new UiObjectNotFoundException("Did not see AnTuTu results screen.");
-        }
+    public static void run(String cmd) throws Exception {
+        cmd = "su -vo " + cmd;
+		Log.d(TAG, "$>" + cmd);
+        Runtime.getRuntime().exec("uiautomator-controller " + cmd);
+		Thread.sleep(300);
+    }
 
-        if (commentTextView.exists()) {
-            getUiDevice().pressBack();
-        }
-        // Yes, sometimes, it needs to be done twice...
-        if (commentTextView.exists()) {
-            getUiDevice().pressBack();
-        }
+    public void clearLogcat() throws Exception {
+        run("exec logcat -- -c");
+    }
 
-        if (detailTextView.exists()) {
-            detailTextView.click();
-            sleep(1); // tab transition
+	public static boolean getScreenState() throws Exception {
+		int fgPid = Integer.parseInt(readFile("/proc/foreground"));
+		return fgPid != 0 ? true : false;
+	}
 
-            UiObject testTextView = new UiObject(selector.text("Test")
-                                                    .className("android.widget.TextView"));
-            if (testTextView.exists()) {
-            testTextView.click();
-            sleep(1); // tab transition
-            }
+	public static void setScreenState(boolean enabled) throws Exception {
+		boolean screenState = getScreenState();
+		if(screenState && !enabled || !screenState && enabled) {
+			run("exec -s input keyevent 26");
+		}
+	}
 
-            UiObject scoresTextView = new UiObject(selector.text("Scores")
-                                                    .className("android.widget.TextView"));
-            if (scoresTextView.exists()) {
-            scoresTextView.click();
-            sleep(1); // tab transition
-            }
-        }
+	public static void safeSleepSec(int durationSec) {
+		try {
+			Thread.sleep(durationSec * 1000);
+		} catch(Exception e) {}
+	}
+
+    public void runInternal(Bundle parameters) throws Exception {
+		final int iterations = Integer.parseInt(parameters.getString("iterations", "1"));
+		final int ambientTemp = Integer.parseInt(parameters.getString("ambient-temp", "25"));
+		final String outdir = parameters.getString("outdir", "/sdcard/mobisys17-cpus/AntutuWorkloadService");
+		final String filename = parameters.getString("filename", "AntutuWorkloadService");
+
+		final String finalOutdir = outdir;
+
+		for(int iter = 0; iter < iterations; iter++) {
+            String fname = String.format("%s-%03d.log", filename, iter);
+
+			// Clear the app
+			run("exec -s pm clear com.antutu.ABenchMark");
+
+			clearLogcat();
+
+			Log.d(TAG, "Waiting for ambient temperature");
+			setAllCoreFrequency(300000);
+			waitForAmbientTemperature(ambientTemp, 30);
+
+			// Turn screen on..it may have gone off
+			setScreenState(true);
+			safeSleepSec(3);
+
+			// Go to home screen
+			try {
+				run("exec -s input keyevent 3");
+			} catch(Exception e) {
+				Log.e(TAG, "Failed to press home button", e);
+				// This is non-fatal..just ignore it
+			}
+
+			// We need to get into ondemand governors for the actual test
+			setAllCoreGovernor("ondemand");
+
+			// Start the app
+			run("exec -s am -- start -W -n com.antutu.ABenchMark/.ABenchMarkStart");
+
+			Log.d(TAG, "Starting workload");
+			runWorkload();
+
+			safeSleepSec(10);
+
+			String logcatCmd = 
+				String.format("exec -s logcat -- -v tracetime -f %s/%s -r 102400 -n 1000 -d",
+						finalOutdir, fname);
+			run(logcatCmd);
+
+		}
     }
 }

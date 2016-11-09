@@ -15,9 +15,10 @@
 #
 
 
-
+#ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 class_dir=bin/classes/com/arm/wlauto/uiauto
-base_class=`python -c "import os, wlauto; print os.path.join(os.path.dirname(wlauto.__file__), 'common', 'android', 'BaseUiAutomation.class')"`
+#base_class=`python -c "import os, wlauto; print os.path.join(os.path.dirname(wlauto.__file__), 'common', 'android', 'BaseUiAutomation.class')"`
+base_class="../../../common/android/BaseUiAutomation.class"
 mkdir -p $class_dir
 cp $base_class $class_dir
 
